@@ -1,0 +1,10 @@
+wilderness-checker
+wilderness-checker.exe
+*.exe
+*.dll
+
+
+.DS_Store
+
+
+.vscode/
