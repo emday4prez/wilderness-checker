@@ -3,77 +3,77 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 )
 
-func main() {
-
-	interval := 5 * time.Second
-	ticker := time.NewTicker(interval)
-
-	defer ticker.Stop()
-
-	log.Println("starting wilderness permit monitor...")
-
-	for t := range ticker.C {
-
-		fmt.Println("-------------------")
-		log.Printf("tick at %v", t)
-
-		if err := checkPermits(); err != nil {
-			log.Printf("Error checking permits: %v", err)
-		}
-
-	}
-
+type CampgroundResponse struct {
+	Campsites map[string]CampsiteNode `json:"campsites"`
 }
 
-func checkPermits() error {
-	url := "https://www.recreation.gov/api/permitinyo/233260/availability?start_date=2026-08-01&end_date=2026-09-30"
+type CampsiteNode struct {
+	Loop           string            `json:"loop"`
+	CampsiteType   string            `json:"campsite_type"`
+	Availabilities map[string]string `json:"availabilities"` // Key is Date, Value is Status
+}
 
-	resp, err := http.Get(url)
+func main() {
+
+	campgroundID := "232445"
+
+	baseURL := fmt.Sprintf("https://www.recreation.gov/api/camps/availability/campground/%s/month", campgroundID)
+
+	startDate := "2026-06-01T00:00:00.000Z"
+
+	params := url.Values{}
+	params.Add("start_date", startDate)
+
+	fullURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
+	fmt.Printf("Checking: %s\n", fullURL)
+
+	req, _ := http.NewRequest("GET", fullURL, nil)
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+	req.Header.Set("Referer", "https://www.recreation.gov/")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("network error: %w", err)
+		log.Fatal(err)
 	}
-
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("received non-200 status: %d", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Fatalf("Failed! Status: %d\nBody: %s", resp.StatusCode, string(body))
 	}
 
-	var data RootResponse
-
+	var data CampgroundResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return fmt.Errorf("failed to decode json: %w", err)
+		log.Fatal("JSON Decode Error:", err)
 	}
 
-	countFount := 0
+	fmt.Println("------------------------------------------------")
+	fmt.Printf("Scanning %d campsites at Watchman...\n", len(data.Campsites))
 
-	for id, node := range data.Payload {
-		fmt.Printf("checking trailhead id: %s\n", id)
-
-		for date, count := range node.DateAvailability {
-			if count > 0 {
-				fmt.Printf("  -> FOUND! Date: %s | Slots: %d\n", date, count)
-				countFount++
+	found := 0
+	for id, site := range data.Campsites {
+		for date, status := range site.Availabilities {
+			if status == "Available" {
+				// Clean up the date string for printing
+				cleanDate := date[:10]
+				fmt.Printf("[OPEN] Site ID %s (%s) is open on %s\n", id, site.Loop, cleanDate)
+				found++
 			}
 		}
 	}
 
-	if countFount == 0 {
-		log.Println("no permits found in this batch")
+	if found == 0 {
+		fmt.Println("No open spots found (but the API worked!).")
+	} else {
+		fmt.Printf("Total open spots found: %d\n", found)
 	}
-
-	return nil
-}
-
-type AvailabilityNode struct {
-	DateAvailability map[string]int `json:"date_availability"`
-}
-
-type RootResponse struct {
-	Payload map[string]AvailabilityNode `json:"payload"`
 }
