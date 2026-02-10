@@ -53,8 +53,6 @@ func checkID(client *http.Client, id int) {
 
 	req, _ := http.NewRequest("GET", url, nil)
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
-
 	resp, err := client.Do(req)
 	if err != nil {
 		return
